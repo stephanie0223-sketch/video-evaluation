@@ -91,7 +91,8 @@ function ScoreBar({ score, max, color }) {
 }
 
 // ─── Anthropic API call ───────────────────────────────────────────────────────
-async function evaluateVideo(apiKey, base64, mimeType, studentName, topic, studentText) {
+async function evaluateVideo(base64, mimeType, studentName, topic, studentText) {
+  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   const criteriaBlock = CRITERIA_GROUPS.map(g =>
     `### ${g.label}\n` + g.items.map(it => `- ${it.label} (${it.weight}分): ${it.desc}`).join("\n")
   ).join("\n\n");
@@ -162,9 +163,13 @@ Return ONLY valid JSON, no markdown fences:
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
+const CLASS_PASSWORD = import.meta.env.VITE_CLASS_PASSWORD || "ateamengineers";
+
 export default function App() {
+  const [unlocked, setUnlocked]         = useState(() => loadLS("tg_unlocked", false));
+  const [pwInput, setPwInput]           = useState("");
+  const [pwError, setPwError]           = useState(false);
   const [view, setView]               = useState("home");
-  const [apiKey, setApiKey]           = useState(() => loadLS("tg_apikey", ""));
   const [students, setStudents]       = useState(() => {
     const s = loadLS("tg3_students", null);
     return s && s.length > 0 ? s : PRESET_STUDENTS;
@@ -186,10 +191,6 @@ export default function App() {
   const [newName, setNewName]         = useState("");
   const [teacherTab, setTeacherTab]   = useState("roster");
   const [filterStudent, setFilterStudent] = useState("all");
-
-  // settings state
-  const [apiKeyInput, setApiKeyInput] = useState(apiKey);
-  const [apiKeySaved, setApiKeySaved] = useState(false);
 
   // class overview sort
   const [sortKey, setSortKey]         = useState("date");
@@ -224,19 +225,18 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    if (!apiKey) { setError("請先至「設定」頁面輸入 Anthropic API Key"); return; }
     if (!selStudent) { setError("請選擇學生姓名"); return; }
     if (!topic.trim()) { setError("請填寫導覽主題"); return; }
     if (!studentText.trim()) { setError("請貼上導覽文字稿"); return; }
     if (!videoFile) { setError("請上傳影片"); return; }
-    if (videoFile.size > 20 * 1024 * 1024) { setError("影片超過 20MB，請壓縮後上傳（建議用 HandBrake）"); return; }
+    if (videoFile.size > 100 * 1024 * 1024) { setError("影片超過 100MB，請壓縮後上傳"); return; }
 
     setLoading(true); setError(null); let step = 0; setLoadStep(0);
     const t = setInterval(() => { step++; if (step < LOAD_STEPS.length) setLoadStep(step); else clearInterval(t); }, 9000);
 
     try {
       const b64 = await fileToBase64(videoFile);
-      const report = await evaluateVideo(apiKey, b64, videoFile.type, selStudent, topic, studentText);
+      const report = await evaluateVideo(b64, videoFile.type, selStudent, topic, studentText);
       clearInterval(t);
       const sub = {
         id: Date.now().toString(),
@@ -271,26 +271,51 @@ export default function App() {
     return sortDir === "asc" ? va - vb : vb - va;
   });
 
+  // ── PASSWORD ───────────────────────────────────────────────────────────────
+  if (!unlocked) return (
+    <div style={{ minHeight: "100vh", background: `linear-gradient(150deg, ${S.navy} 0%, #253560 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "Georgia, serif" }}>
+      <div style={{ width: "100%", maxWidth: 420 }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🗺️</div>
+          <h1 style={{ fontSize: 24, color: S.white, margin: "0 0 6px" }}>英語文化導覽員</h1>
+          <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, fontFamily: "system-ui", margin: 0 }}>口說評量系統</p>
+        </div>
+        <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 20, padding: "28px 24px", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(10px)" }}>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", fontFamily: "system-ui", marginBottom: 10, fontWeight: "bold" }}>🔒 請輸入班級密碼</div>
+          <input
+            type="password"
+            value={pwInput}
+            onChange={e => { setPwInput(e.target.value); setPwError(false); }}
+            onKeyDown={e => { if (e.key === "Enter") { if (pwInput === CLASS_PASSWORD) { saveLS("tg_unlocked", true); setUnlocked(true); } else setPwError(true); } }}
+            placeholder="輸入密碼..."
+            autoFocus
+            style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: pwError ? "2px solid #fca5a5" : "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: S.white, fontSize: 16, fontFamily: "system-ui", boxSizing: "border-box", outline: "none", marginBottom: 10 }}
+          />
+          {pwError && <div style={{ color: "#fca5a5", fontSize: 13, fontFamily: "system-ui", marginBottom: 10 }}>❌ 密碼錯誤，請再試一次</div>}
+          <button
+            onClick={() => { if (pwInput === CLASS_PASSWORD) { saveLS("tg_unlocked", true); setUnlocked(true); } else setPwError(true); }}
+            style={{ width: "100%", background: S.teal, color: S.white, border: "none", borderRadius: 12, padding: "13px", cursor: "pointer", fontSize: 16, fontWeight: "bold", fontFamily: "Georgia, serif" }}>
+            進入系統 →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── HOME ───────────────────────────────────────────────────────────────────
   if (view === "home") return (
     <div style={{ minHeight: "100vh", background: `linear-gradient(150deg, ${S.navy} 0%, #253560 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", fontFamily: "Georgia, serif" }}>
-      {!apiKey && (
-        <div style={{ background: "rgba(201,146,42,0.2)", border: "1px solid rgba(201,146,42,0.6)", borderRadius: 12, padding: "10px 20px", marginBottom: 28, color: "#fcd34d", fontSize: 14, fontFamily: "system-ui", textAlign: "center" }}>
-          ⚠️ 尚未設定 API Key，請先點「⚙️ 設定」
-        </div>
-      )}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <div style={{ fontSize: 52, marginBottom: 12 }}>🗺️</div>
         <h1 style={{ fontSize: 28, fontWeight: "bold", color: S.white, margin: "0 0 6px" }}>英語文化導覽員</h1>
         <h2 style={{ fontSize: 16, fontWeight: "normal", color: "rgba(255,255,255,0.7)", margin: "0 0 8px" }}>口說評量系統</h2>
         <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "system-ui", margin: 0 }}>English Cultural Tour Guide · AI Speech Assessment</p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 16, width: "100%", maxWidth: 740 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 16, width: "100%", maxWidth: 640 }}>
         {[
           { icon: "👩‍🏫", title: "老師管理",  sub: "名單管理・查看成績",    v: "teacher",   bg: "rgba(255,255,255,0.1)", bd: "rgba(255,255,255,0.2)" },
           { icon: "🎬",  title: "學生上傳",  sub: "文字 + 影片 → AI評分",  v: "upload",    bg: "rgba(30,107,94,0.85)",  bd: S.teal },
           { icon: "📊",  title: "班級總覽",  sub: "全班成績一覽表",         v: "classview", bg: "rgba(124,61,145,0.85)", bd: S.purple },
-          { icon: "⚙️",  title: "設定",     sub: "輸入 API Key",          v: "settings",  bg: "rgba(201,146,42,0.5)",  bd: S.gold },
         ].map(b => (
           <button key={b.v} onClick={() => setView(b.v)} style={{ background: b.bg, color: S.white, border: `1px solid ${b.bd}`, borderRadius: 16, padding: "24px 16px", cursor: "pointer", textAlign: "center", backdropFilter: "blur(8px)", transition: "transform 0.15s, box-shadow 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.3)"; }}
@@ -309,52 +334,6 @@ export default function App() {
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: "system-ui" }}>{g.items.reduce((a, i) => a + i.weight, 0)}%</div>
           </div>
         ))}
-      </div>
-    </div>
-  );
-
-  // ── SETTINGS ───────────────────────────────────────────────────────────────
-  if (view === "settings") return (
-    <div style={{ minHeight: "100vh", background: S.cream, fontFamily: "system-ui, sans-serif" }}>
-      <div style={{ background: S.gold, color: S.white, padding: "16px 24px", display: "flex", alignItems: "center", gap: 14 }}>
-        <button onClick={() => setView("home")} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: S.white, cursor: "pointer", padding: "6px 14px", borderRadius: 8, fontSize: 13 }}>← 首頁</button>
-        <h1 style={{ margin: 0, fontSize: 18, fontFamily: "Georgia, serif" }}>⚙️ 設定</h1>
-      </div>
-      <div style={{ maxWidth: 560, margin: "40px auto", padding: "0 20px" }}>
-        <div style={{ background: S.white, borderRadius: 16, padding: 28, border: `1px solid ${S.border}` }}>
-          <h2 style={{ color: S.navy, fontSize: 17, margin: "0 0 8px", fontFamily: "Georgia" }}>Anthropic API Key</h2>
-          <p style={{ color: S.gray, fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
-            此 Key 只儲存在你的瀏覽器中，不會上傳到任何伺服器。<br />
-            取得方式：前往 <a href="https://console.anthropic.com/keys" target="_blank" rel="noreferrer" style={{ color: S.teal }}>console.anthropic.com/keys</a> 建立新 Key。
-          </p>
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={e => { setApiKeyInput(e.target.value); setApiKeySaved(false); }}
-            placeholder="sk-ant-api03-..."
-            style={{ width: "100%", padding: "12px 14px", border: `1px solid ${S.border}`, borderRadius: 10, fontSize: 14, boxSizing: "border-box", outline: "none", fontFamily: "monospace" }}
-          />
-          <button
-            onClick={() => {
-              const k = apiKeyInput.trim();
-              setApiKey(k);
-              saveLS("tg_apikey", k);
-              setApiKeySaved(true);
-            }}
-            style={{ marginTop: 14, width: "100%", background: S.teal, color: S.white, border: "none", borderRadius: 10, padding: "13px", cursor: "pointer", fontSize: 15, fontWeight: "bold" }}>
-            💾 儲存 API Key
-          </button>
-          {apiKeySaved && <div style={{ marginTop: 12, color: "#15803d", fontSize: 13, textAlign: "center" }}>✅ 已儲存！可以開始使用評分功能了</div>}
-          {apiKey && !apiKeySaved && <div style={{ marginTop: 12, color: S.gray, fontSize: 12, textAlign: "center" }}>目前已設定 API Key（{apiKey.slice(0, 10)}...）</div>}
-        </div>
-
-        <div style={{ background: "#fffbeb", borderRadius: 14, padding: 20, marginTop: 20, border: `1px solid #fcd34d` }}>
-          <h3 style={{ color: "#92400e", fontSize: 14, margin: "0 0 10px" }}>💡 API 費用說明</h3>
-          <p style={{ color: "#78350f", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-            每次評分會呼叫 Claude claude-opus-4-5，費用約 <strong>$0.05–0.15 美元</strong>（依影片長度而異）。
-            建議先至 Anthropic Console 設定月度費用上限，避免意外超支。
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -624,7 +603,7 @@ export default function App() {
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: "block", fontSize: 14, fontWeight: "bold", color: S.navy, marginBottom: 8 }}>
               上傳影片 *
-              <span style={{ fontWeight: "normal", color: S.gray, fontSize: 12, marginLeft: 6 }}>MP4，20MB 以內，建議 2–5 分鐘</span>
+              <span style={{ fontWeight: "normal", color: S.gray, fontSize: 12, marginLeft: 6 }}>MP4，100MB 以內，建議 2–5 分鐘</span>
             </label>
             <div onClick={() => fileRef.current?.click()} style={{ border: `2px dashed ${videoFile ? S.teal : S.border}`, borderRadius: 12, padding: "22px", textAlign: "center", cursor: "pointer", background: videoFile ? "#e8f5f2" : S.lightGray }}>
               {videoFile ? (
