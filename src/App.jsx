@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 
 // ─── 預設學生名單 ─────────────────────────────────────────────────────────────
@@ -92,7 +93,6 @@ function ScoreBar({ score, max, color }) {
 
 // ─── Anthropic API call ───────────────────────────────────────────────────────
 async function evaluateVideo(base64, mimeType, studentName, topic, studentText) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   const criteriaBlock = CRITERIA_GROUPS.map(g =>
     `### ${g.label}\n` + g.items.map(it => `- ${it.label} (${it.weight}分): ${it.desc}`).join("\n")
   ).join("\n\n");
@@ -135,13 +135,10 @@ Return ONLY valid JSON, no markdown fences:
   "recommendations": ["<actionable tip zh>", "<tip zh>", "<tip zh>"]
 }`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/evaluate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
       model: "claude-opus-4-5",
